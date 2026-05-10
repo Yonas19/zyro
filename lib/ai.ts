@@ -6,7 +6,7 @@ const genAI = new GoogleGenerativeAI(apiKey);
 
 export async function parseUserIntent(userMessage: string) {
     try {
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
         const systemPrompt = `
       You are the core routing engine for 'Zyro', an operations automation tool.
