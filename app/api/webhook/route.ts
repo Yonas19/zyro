@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { parseUserIntent } from '../../../lib/ai';
 import { Client as NotionClient } from '@notionhq/client';
 import { WebClient as SlackClient } from '@slack/web-api';
+import twilio from 'twilio';
 
 // ==========================================
 // 1. NOTION SETUP
@@ -38,21 +39,37 @@ async function sendSlackMessage(content: string) {
 }
 
 // ==========================================
-// 3. THE MASTER ROUTER
+// 3. TWILIO (REPLY) SETUP
+// ==========================================
+const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+const twilioNumber = process.env.TWILIO_PHONE_NUMBER || "";
+
+async function sendWhatsAppReply(toPhone: string, message: string) {
+    if (!toPhone || !twilioNumber) return;
+    return await twilioClient.messages.create({
+        from: twilioNumber,
+        to: toPhone,
+        body: message
+    });
+}
+
+// ==========================================
+// 4. THE MASTER ROUTER
 // ==========================================
 export async function POST(req: Request) {
     try {
         const contentType = req.headers.get('content-type') || '';
         let userMessage = '';
+        let senderPhone = '';
 
-        // 1. The Traffic Cop: Figure out who is sending the message
+        // The Traffic Cop
         if (contentType.includes('application/json')) {
             const body = await req.json();
             userMessage = body.message;
         } else if (contentType.includes('application/x-www-form-urlencoded')) {
-            // Twilio sends data in this format
             const formData = await req.formData();
             userMessage = formData.get('Body') as string;
+            senderPhone = formData.get('From') as string; // Grabs your exact WhatsApp number!
         }
 
         if (!userMessage) {
@@ -69,16 +86,27 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'AI parsing failed' }, { status: 500 });
         }
 
-        // The Router executes the action
+        // The Router executes & prepares the reply
+        let replyText = "";
+
         if (parsedIntent.tool === 'notion') {
             console.log(`🚀 Routing to Notion...`);
             await createNotionTask(parsedIntent.content, parsedIntent.priority || "Medium");
-            console.log(`✅ Task added to Notion!`);
+            replyText = `✅ Done! I saved that to Notion for you.`;
         }
         else if (parsedIntent.tool === 'slack') {
             console.log(`🚀 Routing to Slack...`);
             await sendSlackMessage(parsedIntent.content);
-            console.log(`✅ Message sent to Slack!`);
+            replyText = `✅ Sent! The team has been pinged in Slack.`;
+        }
+        else {
+            replyText = `🤔 Hmm, I'm not sure how to do that yet. Try asking me to ping Slack or save a task!`;
+        }
+
+        // Send the text message back to your phone
+        if (senderPhone) {
+            await sendWhatsAppReply(senderPhone, replyText);
+            console.log(`📱 Replied to user on WhatsApp!`);
         }
 
         return NextResponse.json({
