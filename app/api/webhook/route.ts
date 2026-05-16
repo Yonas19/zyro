@@ -42,8 +42,18 @@ async function sendSlackMessage(content: string) {
 // ==========================================
 export async function POST(req: Request) {
     try {
-        const body = await req.json();
-        const userMessage = body.message;
+        const contentType = req.headers.get('content-type') || '';
+        let userMessage = '';
+
+        // 1. The Traffic Cop: Figure out who is sending the message
+        if (contentType.includes('application/json')) {
+            const body = await req.json();
+            userMessage = body.message;
+        } else if (contentType.includes('application/x-www-form-urlencoded')) {
+            // Twilio sends data in this format
+            const formData = await req.formData();
+            userMessage = formData.get('Body') as string;
+        }
 
         if (!userMessage) {
             return NextResponse.json({ error: 'Message is required' }, { status: 400 });
